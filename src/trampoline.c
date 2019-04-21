@@ -26,7 +26,7 @@
  *  SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include <windows.h>
+#include <string.h>
 
 #ifdef _MSC_VER
 #include <intrin.h>

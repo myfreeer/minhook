@@ -45,6 +45,9 @@ set(SOURCES_MINHOOK
   "src/buffer.c"
   "src/hook.c"
   "src/trampoline.c"
+  "src/buffer_native.h"
+  "src/thread_native.h"
+  "src/ldr_native.h"
 )
 
 if(CMAKE_SIZEOF_VOID_P EQUAL 8)
@@ -61,6 +64,7 @@ if(BUILD_SHARED_LIBS)
 endif()
 
 add_library(minhook ${SOURCES_MINHOOK} ${SOURCES_HDE} ${RESOURCES})
+target_link_libraries(minhook ntdll ntdllcrt)
 
 target_include_directories(minhook PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include/>

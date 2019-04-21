@@ -26,13 +26,13 @@
  *  SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include <windows.h>
-#include <tlhelp32.h>
+#include "thread_native.h"
 #include <limits.h>
 
 #include "../include/MinHook.h"
 #include "buffer.h"
 #include "trampoline.h"
+#include "ldr_native.h"
 
 #ifndef ARRAYSIZE
     #define ARRAYSIZE(A) (sizeof(A)/sizeof((A)[0]))
@@ -40,9 +40,6 @@
 
 // Initial capacity of the HOOK_ENTRY buffer.
 #define INITIAL_HOOK_CAPACITY   32
-
-// Initial capacity of the thread IDs buffer.
-#define INITIAL_THREAD_CAPACITY 128
 
 // Special hook position values.
 #define INVALID_HOOK_POS UINT_MAX
@@ -74,13 +71,6 @@ typedef struct _HOOK_ENTRY
     UINT8  newIPs[8];           // Instruction boundaries of the trampoline function.
 } HOOK_ENTRY, *PHOOK_ENTRY;
 
-// Suspended threads for Freeze()/Unfreeze().
-typedef struct _FROZEN_THREADS
-{
-    LPDWORD pItems;         // Data heap
-    UINT    capacity;       // Size of allocated data heap, items
-    UINT    size;           // Actual number of data items
-} FROZEN_THREADS, *PFROZEN_THREADS;
 
 //-------------------------------------------------------------------------
 // Global Variables:
@@ -90,7 +80,7 @@ typedef struct _FROZEN_THREADS
 volatile LONG g_isLocked = FALSE;
 
 // Private heap handle. If not NULL, this library is initialized.
-HANDLE g_hHeap = NULL;
+static HANDLE g_hHeap = NULL;
 
 // Hook entries.
 struct
@@ -120,14 +110,14 @@ static PHOOK_ENTRY AddHookEntry()
     if (g_hooks.pItems == NULL)
     {
         g_hooks.capacity = INITIAL_HOOK_CAPACITY;
-        g_hooks.pItems = (PHOOK_ENTRY)HeapAlloc(
+        g_hooks.pItems = (PHOOK_ENTRY)RtlAllocateHeap(
             g_hHeap, 0, g_hooks.capacity * sizeof(HOOK_ENTRY));
         if (g_hooks.pItems == NULL)
             return NULL;
     }
     else if (g_hooks.size >= g_hooks.capacity)
     {
-        PHOOK_ENTRY p = (PHOOK_ENTRY)HeapReAlloc(
+        PHOOK_ENTRY p = (PHOOK_ENTRY)RtlReAllocateHeap(
             g_hHeap, 0, g_hooks.pItems, (g_hooks.capacity * 2) * sizeof(HOOK_ENTRY));
         if (p == NULL)
             return NULL;
@@ -149,7 +139,7 @@ static void DeleteHookEntry(UINT pos)
 
     if (g_hooks.capacity / 2 >= INITIAL_HOOK_CAPACITY && g_hooks.capacity / 2 >= g_hooks.size)
     {
-        PHOOK_ENTRY p = (PHOOK_ENTRY)HeapReAlloc(
+        PHOOK_ENTRY p = (PHOOK_ENTRY)RtlReAllocateHeap(
             g_hHeap, 0, g_hooks.pItems, (g_hooks.capacity / 2) * sizeof(HOOK_ENTRY));
         if (p == NULL)
             return;
@@ -210,7 +200,7 @@ static void ProcessThreadIPs(HANDLE hThread, UINT pos, UINT action)
     UINT count;
 
     c.ContextFlags = CONTEXT_CONTROL;
-    if (!GetThreadContext(hThread, &c))
+    if (!NT_SUCCESS(NtGetContextThread(hThread, &c)))
         return;
 
     if (pos == ALL_HOOKS_POS)
@@ -254,52 +244,8 @@ static void ProcessThreadIPs(HANDLE hThread, UINT pos, UINT action)
         if (ip != 0)
         {
             *pIP = ip;
-            SetThreadContext(hThread, &c);
+            NtSetContextThread(hThread, &c);
         }
-    }
-}
-
-//-------------------------------------------------------------------------
-static VOID EnumerateThreads(PFROZEN_THREADS pThreads)
-{
-    HANDLE hSnapshot = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0);
-    if (hSnapshot != INVALID_HANDLE_VALUE)
-    {
-        THREADENTRY32 te;
-        te.dwSize = sizeof(THREADENTRY32);
-        if (Thread32First(hSnapshot, &te))
-        {
-            do
-            {
-                if (te.dwSize >= (FIELD_OFFSET(THREADENTRY32, th32OwnerProcessID) + sizeof(DWORD))
-                    && te.th32OwnerProcessID == GetCurrentProcessId()
-                    && te.th32ThreadID != GetCurrentThreadId())
-                {
-                    if (pThreads->pItems == NULL)
-                    {
-                        pThreads->capacity = INITIAL_THREAD_CAPACITY;
-                        pThreads->pItems
-                            = (LPDWORD)HeapAlloc(g_hHeap, 0, pThreads->capacity * sizeof(DWORD));
-                        if (pThreads->pItems == NULL)
-                            break;
-                    }
-                    else if (pThreads->size >= pThreads->capacity)
-                    {
-                        LPDWORD p = (LPDWORD)HeapReAlloc(
-                            g_hHeap, 0, pThreads->pItems, (pThreads->capacity * 2) * sizeof(DWORD));
-                        if (p == NULL)
-                            break;
-
-                        pThreads->capacity *= 2;
-                        pThreads->pItems = p;
-                    }
-                    pThreads->pItems[pThreads->size++] = te.th32ThreadID;
-                }
-
-                te.dwSize = sizeof(THREADENTRY32);
-            } while (Thread32Next(hSnapshot, &te));
-        }
-        CloseHandle(hSnapshot);
     }
 }
 
@@ -309,19 +255,22 @@ static VOID Freeze(PFROZEN_THREADS pThreads, UINT pos, UINT action)
     pThreads->pItems   = NULL;
     pThreads->capacity = 0;
     pThreads->size     = 0;
-    EnumerateThreads(pThreads);
+    if (!NT_SUCCESS(EnumerateThreads(g_hHeap, pThreads))) {
+      return;
+    }
 
     if (pThreads->pItems != NULL)
     {
         UINT i;
         for (i = 0; i < pThreads->size; ++i)
         {
-            HANDLE hThread = OpenThread(THREAD_ACCESS, FALSE, pThreads->pItems[i]);
+            HANDLE hThread = NativeOpenThread(THREAD_ACCESS, FALSE, pThreads->pItems[i]);
             if (hThread != NULL)
             {
-                SuspendThread(hThread);
+                ULONG PreviousSuspendCount;
+                NtSuspendThread(hThread, &PreviousSuspendCount);
                 ProcessThreadIPs(hThread, pos, action);
-                CloseHandle(hThread);
+                NtClose(hThread);
             }
         }
     }
@@ -335,15 +284,16 @@ static VOID Unfreeze(PFROZEN_THREADS pThreads)
         UINT i;
         for (i = 0; i < pThreads->size; ++i)
         {
-            HANDLE hThread = OpenThread(THREAD_ACCESS, FALSE, pThreads->pItems[i]);
+            HANDLE hThread = NativeOpenThread(THREAD_ACCESS, FALSE, pThreads->pItems[i]);
             if (hThread != NULL)
             {
-                ResumeThread(hThread);
-                CloseHandle(hThread);
+                ULONG PreviousSuspendCount;
+                NtResumeThread(hThread, &PreviousSuspendCount);
+                NtClose(hThread);
             }
         }
 
-        HeapFree(g_hHeap, 0, pThreads->pItems);
+        RtlFreeHeap(g_hHeap, 0, pThreads->pItems);
     }
 }
 
@@ -354,6 +304,8 @@ static MH_STATUS EnableHookLL(UINT pos, BOOL enable)
     DWORD  oldProtect;
     SIZE_T patchSize    = sizeof(JMP_REL);
     LPBYTE pPatchTarget = (LPBYTE)pHook->pTarget;
+    SIZE_T patchSizeAlign    = patchSize;
+    LPVOID pPatchTargetAlign = pPatchTarget;
 
     if (pHook->patchAbove)
     {
@@ -361,7 +313,8 @@ static MH_STATUS EnableHookLL(UINT pos, BOOL enable)
         patchSize    += sizeof(JMP_REL_SHORT);
     }
 
-    if (!VirtualProtect(pPatchTarget, patchSize, PAGE_EXECUTE_READWRITE, &oldProtect))
+    if (!NtProtectVirtualMemory(NtCurrentProcess(), &pPatchTargetAlign, &patchSizeAlign,
+                                PAGE_EXECUTE_READWRITE, &oldProtect))
         return MH_ERROR_MEMORY_PROTECT;
 
     if (enable)
@@ -385,10 +338,11 @@ static MH_STATUS EnableHookLL(UINT pos, BOOL enable)
             memcpy(pPatchTarget, pHook->backup, sizeof(JMP_REL));
     }
 
-    VirtualProtect(pPatchTarget, patchSize, oldProtect, &oldProtect);
+    NtProtectVirtualMemory(NtCurrentProcess(), &pPatchTargetAlign, &patchSizeAlign,
+                           oldProtect, &oldProtect);
 
     // Just-in-case measure.
-    FlushInstructionCache(GetCurrentProcess(), pPatchTarget, patchSize);
+    NtFlushInstructionCache(NtCurrentProcess(), pPatchTargetAlign, patchSizeAlign);
 
     pHook->isEnabled   = enable;
     pHook->queueEnable = enable;
@@ -444,10 +398,7 @@ static VOID EnterSpinLock(VOID)
         // generates a full memory barrier itself.
 
         // Prevent the loop from being too busy.
-        if (spinCount < 32)
-            Sleep(0);
-        else
-            Sleep(1);
+        YieldProcessor();
 
         spinCount++;
     }
@@ -471,7 +422,7 @@ MH_STATUS WINAPI MH_Initialize(VOID)
 
     if (g_hHeap == NULL)
     {
-        g_hHeap = HeapCreate(0, 0, 0);
+        g_hHeap = RtlCreateDefaultHeap();
         if (g_hHeap != NULL)
         {
             // Initialize the internal function buffer.
@@ -511,8 +462,8 @@ MH_STATUS WINAPI MH_Uninitialize(VOID)
 
             UninitializeBuffer();
 
-            HeapFree(g_hHeap, 0, g_hooks.pItems);
-            HeapDestroy(g_hHeap);
+            RtlFreeHeap(g_hHeap, 0, g_hooks.pItems);
+            RtlDestroyHeap(g_hHeap);
 
             g_hHeap = NULL;
 
@@ -838,11 +789,11 @@ MH_STATUS WINAPI MH_CreateHookApiEx(
     HMODULE hModule;
     LPVOID  pTarget;
 
-    hModule = GetModuleHandleW(pszModule);
+    hModule = LdrGetModuleHandleW(pszModule);
     if (hModule == NULL)
         return MH_ERROR_MODULE_NOT_FOUND;
 
-    pTarget = (LPVOID)GetProcAddress(hModule, pszProcName);
+    pTarget = (LPVOID)LdrGetProcAddress(hModule, pszProcName);
     if (pTarget == NULL)
         return MH_ERROR_FUNCTION_NOT_FOUND;
 
