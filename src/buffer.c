@@ -79,7 +79,7 @@ VOID UninitializeBuffer(VOID)
     while (pBlock)
     {
         PMEMORY_BLOCK pNext = pBlock->pNext;
-        VirtualFree(pBlock, 0, MEM_RELEASE);
+        NtVirtualFree(pBlock, 0, MEM_RELEASE);
         pBlock = pNext;
     }
 }
@@ -294,7 +294,7 @@ VOID FreeBuffer(LPVOID pBuffer)
                 else
                     g_pMemoryBlocks = pBlock->pNext;
 
-                VirtualFree(pBlock, 0, MEM_RELEASE);
+                NtVirtualFree(pBlock, 0, MEM_RELEASE);
             }
 
             break;
@@ -309,7 +309,7 @@ VOID FreeBuffer(LPVOID pBuffer)
 BOOL IsExecutableAddress(LPVOID pAddress)
 {
     MEMORY_BASIC_INFORMATION mi;
-  NtVirtualQuery(pAddress, &mi, sizeof(mi));
+    NtVirtualQuery(pAddress, &mi, sizeof(mi));
 
     return (mi.State == MEM_COMMIT && (mi.Protect & PAGE_EXECUTE_FLAGS));
 }

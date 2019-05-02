@@ -30,7 +30,7 @@ NtFreeVirtualMemory(
     _In_ ULONG FreeType
 );
 
-static inline BOOL VirtualFree(LPVOID addr, SIZE_T size, DWORD type) {
+static inline BOOL NtVirtualFree(LPVOID addr, SIZE_T size, DWORD type) {
   return NT_SUCCESS(NtFreeVirtualMemory(NtCurrentProcess(), &addr, &size, type));
 }
 
