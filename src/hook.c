@@ -313,8 +313,8 @@ static MH_STATUS EnableHookLL(UINT pos, BOOL enable)
         patchSize    += sizeof(JMP_REL_SHORT);
     }
 
-    if (!NtProtectVirtualMemory(NtCurrentProcess(), &pPatchTargetAlign, &patchSizeAlign,
-                                PAGE_EXECUTE_READWRITE, &oldProtect))
+    if (!NT_SUCCESS(NtProtectVirtualMemory(NtCurrentProcess(), &pPatchTargetAlign, &patchSizeAlign,
+                                           PAGE_EXECUTE_READWRITE, &oldProtect)))
         return MH_ERROR_MEMORY_PROTECT;
 
     if (enable)
