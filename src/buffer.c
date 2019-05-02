@@ -62,7 +62,7 @@ typedef struct _MEMORY_BLOCK
 //-------------------------------------------------------------------------
 
 // First element of the memory block list.
-PMEMORY_BLOCK g_pMemoryBlocks;
+PMEMORY_BLOCK g_pMemoryBlocks = NULL;
 
 //-------------------------------------------------------------------------
 VOID InitializeBuffer(VOID)
@@ -154,8 +154,11 @@ static PMEMORY_BLOCK GetMemoryBlock(LPVOID pOrigin)
 #if defined(_M_X64) || defined(__x86_64__)
     ULONG_PTR minAddr;
     ULONG_PTR maxAddr;
-
+#ifdef __GNUC__
+    SYSTEM_INFO si = {};
+#else
     SYSTEM_INFO si;
+#endif
     MinGetSystemInfo(&si);
     minAddr = (ULONG_PTR)si.lpMinimumApplicationAddress;
     maxAddr = (ULONG_PTR)si.lpMaximumApplicationAddress;
