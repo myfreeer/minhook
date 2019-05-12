@@ -77,11 +77,10 @@ typedef struct _NT_TEB {
 #define NtGetCurrentThreadId() (((PNT_TEB)NtCurrentTeb())->ClientId.UniqueThread)
 
 // Suspended threads for Freeze()/Unfreeze().
-typedef struct _FROZEN_THREADS
-{
+typedef struct _FROZEN_THREADS {
   LPDWORD pItems;         // Data heap
-  UINT    capacity;       // Size of allocated data heap, items
-  UINT    size;           // Actual number of data items
+  UINT capacity;       // Size of allocated data heap, items
+  UINT size;           // Actual number of data items
 } FROZEN_THREADS, *PFROZEN_THREADS;
 
 
@@ -89,60 +88,65 @@ NTSTATUS EnumerateThreads(PVOID heap, PFROZEN_THREADS threads) {
   if (!heap || !threads) {
     return STATUS_UNSUCCESSFUL;
   }
-  SIZE_T ProcThrdInfoSize = 0;
-  NTSTATUS Status;
-  void *ProcThrdInfo = NULL;
+  SIZE_T bufferSize = 0;
+  ULONG requiredBufferSize = 0;
+  NTSTATUS status;
+  void *processInfoBuffer = NULL;
 
   // get SystemProcessInformation
   for (;;) {
-    ProcThrdInfoSize += 0x10000;
-    Status = NtAllocateVirtualMemory(NtCurrentProcess(), &ProcThrdInfo, 0, &ProcThrdInfoSize,
+    bufferSize += 0x10000;
+    requiredBufferSize = (ULONG) bufferSize;
+    status = NtAllocateVirtualMemory(NtCurrentProcess(), &processInfoBuffer, 0, &bufferSize,
                                      MEM_COMMIT, PAGE_READWRITE);
-    if (!NT_SUCCESS(Status)) {
-      ProcThrdInfo = NULL;
+    if (!NT_SUCCESS(status)) {
+      processInfoBuffer = NULL;
       break;
     }
 
-    Status = NtQuerySystemInformation(SystemProcessInformation, ProcThrdInfo,
-                                      ProcThrdInfoSize, NULL);
+    status = NtQuerySystemInformation(SystemProcessInformation, processInfoBuffer,
+                                      bufferSize, &requiredBufferSize);
 
-    if (Status == STATUS_INFO_LENGTH_MISMATCH) {
-      NtFreeVirtualMemory(NtCurrentProcess(), ProcThrdInfo, &ProcThrdInfoSize, MEM_RELEASE);
-      ProcThrdInfo = NULL;
+    if (status == STATUS_INFO_LENGTH_MISMATCH) {
+      NtFreeVirtualMemory(NtCurrentProcess(), processInfoBuffer, &bufferSize, MEM_RELEASE);
+      processInfoBuffer = NULL;
+      bufferSize = (SIZE_T) requiredBufferSize;
     } else {
       break;
     }
   }
-  if (ProcThrdInfo == NULL) {
-    return NT_SUCCESS(Status) ? STATUS_UNSUCCESSFUL : Status;
+  if (processInfoBuffer == NULL) {
+    return NT_SUCCESS(status) ? STATUS_UNSUCCESSFUL : status;
   }
 
   // get SystemProcessInformation of current process
-  PSYSTEM_PROCESS_INFORMATION_EX ProcessInfo = ProcThrdInfo;
+  PSYSTEM_PROCESS_INFORMATION_EX processInfo = processInfoBuffer;
   PSYSTEM_PROCESS_INFORMATION_EX currentProcessInfo = NULL;
   HANDLE currentProcessId = NtGetCurrentProcessId();
-  ULONG_PTR ProcOffset = 0;
+  ULONG_PTR offset = 0;
   do {
-    ProcessInfo = (PSYSTEM_PROCESS_INFORMATION_EX) ((ULONG_PTR) ProcessInfo + ProcOffset);
-    if (ProcessInfo->UniqueProcessId == currentProcessId) {
-      currentProcessInfo = ProcessInfo;
+    processInfo = (PSYSTEM_PROCESS_INFORMATION_EX) ((ULONG_PTR) processInfo + offset);
+    if (processInfo->UniqueProcessId == currentProcessId) {
+      currentProcessInfo = processInfo;
       break;
     }
-  } while ((ProcOffset = ProcessInfo->NextEntryOffset) != 0);
+  } while ((offset = processInfo->NextEntryOffset) != 0);
   if (currentProcessInfo == NULL) {
+    NtFreeVirtualMemory(NtCurrentProcess(), processInfoBuffer, &bufferSize, MEM_RELEASE);
     // Probably STATUS_NOT_FOUND is better here.
     return STATUS_UNSUCCESSFUL;
   }
 
   // get info of threads
-  PDWORD threadIdBuffer = RtlAllocateHeap(heap, 0, ProcessInfo->NumberOfThreads * sizeof(DWORD));
+  PDWORD threadIdBuffer = RtlAllocateHeap(heap, 0, currentProcessInfo->NumberOfThreads * sizeof(DWORD));
   if (threadIdBuffer == NULL) {
+    NtFreeVirtualMemory(NtCurrentProcess(), processInfoBuffer, &bufferSize, MEM_RELEASE);
     return STATUS_UNSUCCESSFUL;
   }
   unsigned threadIdBufferIndex = 0;
   HANDLE currentThreadId = NtGetCurrentThreadId();
-  for (unsigned i = 0; i < ProcessInfo->NumberOfThreads; ++i) {
-    HANDLE threadId = ProcessInfo->Threads[i].ClientId.UniqueThread;
+  for (unsigned i = 0; i < currentProcessInfo->NumberOfThreads; ++i) {
+    HANDLE threadId = currentProcessInfo->Threads[i].ClientId.UniqueThread;
     if (threadId != currentThreadId) {
       threadIdBuffer[threadIdBufferIndex++] = HandleToUlong(threadId);
     }
@@ -150,9 +154,9 @@ NTSTATUS EnumerateThreads(PVOID heap, PFROZEN_THREADS threads) {
 
   // set info
   threads->pItems = threadIdBuffer;
-  threads->capacity = ProcessInfo->NumberOfThreads;
+  threads->capacity = currentProcessInfo->NumberOfThreads;
   threads->size = threadIdBufferIndex;
-  return NtFreeVirtualMemory(NtCurrentProcess(), ProcThrdInfo, &ProcThrdInfoSize, MEM_RELEASE);
+  return NtFreeVirtualMemory(NtCurrentProcess(), processInfoBuffer, &bufferSize, MEM_RELEASE);
 }
 
 NTSYSCALLAPI
@@ -199,9 +203,8 @@ NtResumeThread(
 
 HANDLE
 NativeOpenThread(IN DWORD dwDesiredAccess,
-           IN BOOL bInheritHandle,
-           IN DWORD dwThreadId)
-{
+                 IN BOOL bInheritHandle,
+                 IN DWORD dwThreadId) {
   NTSTATUS Status;
   HANDLE ThreadHandle;
   OBJECT_ATTRIBUTES ObjectAttributes;
@@ -220,8 +223,7 @@ NativeOpenThread(IN DWORD dwDesiredAccess,
                         dwDesiredAccess,
                         &ObjectAttributes,
                         &ClientId);
-  if (!NT_SUCCESS(Status))
-  {
+  if (!NT_SUCCESS(Status)) {
     return NULL;
   }
 
