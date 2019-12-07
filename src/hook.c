@@ -304,14 +304,16 @@ static MH_STATUS EnableHookLL(UINT pos, BOOL enable)
     DWORD  oldProtect;
     SIZE_T patchSize    = sizeof(JMP_REL);
     LPBYTE pPatchTarget = (LPBYTE)pHook->pTarget;
-    SIZE_T patchSizeAlign    = patchSize;
-    LPVOID pPatchTargetAlign = pPatchTarget;
+    SIZE_T patchSizeAlign;
+    LPVOID pPatchTargetAlign;
 
     if (pHook->patchAbove)
     {
         pPatchTarget -= sizeof(JMP_REL);
         patchSize    += sizeof(JMP_REL_SHORT);
     }
+    patchSizeAlign    = patchSize;
+    pPatchTargetAlign = pPatchTarget;
 
     if (!NT_SUCCESS(NtProtectVirtualMemory(NtCurrentProcess(), &pPatchTargetAlign, &patchSizeAlign,
                                            PAGE_EXECUTE_READWRITE, &oldProtect)))
