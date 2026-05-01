@@ -103,15 +103,16 @@ NtFlushInstructionCache(
     _In_ SIZE_T Length
 );
 
-static inline VOID WINAPI MinGetSystemInfo(LPSYSTEM_INFO si) {
+static inline BOOL WINAPI MinGetSystemInfo(LPSYSTEM_INFO si) {
   SYSTEM_BASIC_INFORMATION info;
   if (!NT_SUCCESS(NtQuerySystemInformation(SystemBasicInformation, &info, sizeof(info), NULL))) {
-    return;
+    return FALSE;
   }
   // only this is used by min-hook
   si->lpMinimumApplicationAddress = (LPVOID) info.LowestUserAddress;
   si->lpMaximumApplicationAddress = (LPVOID) info.HighestUserAddress;
   si->dwAllocationGranularity = info.AllocationGranularity;
+  return TRUE;
 }
 
 #define RtlCreateDefaultHeap() RtlCreateHeap(HEAP_GROWABLE, NULL, 0, 0, NULL, NULL)

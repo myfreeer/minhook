@@ -51,10 +51,16 @@ static inline FARPROC LdrGetProcAddress(
 )
 {
   ANSI_STRING procNameAnsi;
-  RtlInitAnsiString(&procNameAnsi, lpProcName);
-
   FARPROC procAddress = NULL;
-  NTSTATUS status = LdrGetProcedureAddress(hModule, &procNameAnsi, 0, (PVOID *)(&procAddress));
+  NTSTATUS status;
+
+  if ((((ULONG_PTR)lpProcName) >> 16) == 0) {
+    status = LdrGetProcedureAddress(hModule, NULL, LOWORD(lpProcName), (PVOID *)(&procAddress));
+  } else {
+    RtlInitAnsiString(&procNameAnsi, lpProcName);
+    status = LdrGetProcedureAddress(hModule, &procNameAnsi, 0, (PVOID *)(&procAddress));
+  }
+
   return (NT_SUCCESS(status)) ? (procAddress) : (NULL);
 }
 #endif //MINHOOK_LDR_NATIVE_H

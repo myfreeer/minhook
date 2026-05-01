@@ -7,6 +7,10 @@
 #define STATUS_INFO_LENGTH_MISMATCH ((NTSTATUS)0xC0000004)
 #endif
 
+#ifndef STATUS_SUCCESS
+#define STATUS_SUCCESS ((NTSTATUS)0x00000000)
+#endif
+
 #ifndef STATUS_UNSUCCESSFUL
 #define STATUS_UNSUCCESSFUL ((NTSTATUS)0xC0000001)
 #endif
@@ -69,6 +73,10 @@ typedef struct _FROZEN_THREADS {
   UINT size;           // Actual number of data items
 } FROZEN_THREADS, *PFROZEN_THREADS;
 
+static inline VOID FreeProcessInfoBuffer(PVOID processInfoBuffer) {
+  SIZE_T regionSize = 0;
+  NtFreeVirtualMemory(NtCurrentProcess(), &processInfoBuffer, &regionSize, MEM_RELEASE);
+}
 
 NTSTATUS EnumerateThreads(PVOID heap, PFROZEN_THREADS threads) {
   if (!heap || !threads) {
@@ -84,7 +92,7 @@ NTSTATUS EnumerateThreads(PVOID heap, PFROZEN_THREADS threads) {
     bufferSize += 0x10000;
     requiredBufferSize = (ULONG) bufferSize;
     status = NtAllocateVirtualMemory(NtCurrentProcess(), &processInfoBuffer, 0, &bufferSize,
-                                     MEM_COMMIT, PAGE_READWRITE);
+                                     MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
     if (!NT_SUCCESS(status)) {
       processInfoBuffer = NULL;
       break;
@@ -94,7 +102,7 @@ NTSTATUS EnumerateThreads(PVOID heap, PFROZEN_THREADS threads) {
                                       bufferSize, &requiredBufferSize);
 
     if (status == STATUS_INFO_LENGTH_MISMATCH) {
-      NtFreeVirtualMemory(NtCurrentProcess(), processInfoBuffer, &bufferSize, MEM_RELEASE);
+      FreeProcessInfoBuffer(processInfoBuffer);
       processInfoBuffer = NULL;
       bufferSize = (SIZE_T) requiredBufferSize;
     } else {
@@ -103,6 +111,10 @@ NTSTATUS EnumerateThreads(PVOID heap, PFROZEN_THREADS threads) {
   }
   if (processInfoBuffer == NULL) {
     return NT_SUCCESS(status) ? STATUS_UNSUCCESSFUL : status;
+  }
+  if (!NT_SUCCESS(status)) {
+    FreeProcessInfoBuffer(processInfoBuffer);
+    return status;
   }
 
   // get SystemProcessInformation of current process
@@ -118,7 +130,7 @@ NTSTATUS EnumerateThreads(PVOID heap, PFROZEN_THREADS threads) {
     }
   } while ((offset = processInfo->NextEntryOffset) != 0);
   if (currentProcessInfo == NULL) {
-    NtFreeVirtualMemory(NtCurrentProcess(), processInfoBuffer, &bufferSize, MEM_RELEASE);
+    FreeProcessInfoBuffer(processInfoBuffer);
     // Probably STATUS_NOT_FOUND is better here.
     return STATUS_UNSUCCESSFUL;
   }
@@ -126,7 +138,7 @@ NTSTATUS EnumerateThreads(PVOID heap, PFROZEN_THREADS threads) {
   // get info of threads
   PDWORD threadIdBuffer = RtlAllocateHeap(heap, 0, currentProcessInfo->NumberOfThreads * sizeof(DWORD));
   if (threadIdBuffer == NULL) {
-    NtFreeVirtualMemory(NtCurrentProcess(), processInfoBuffer, &bufferSize, MEM_RELEASE);
+    FreeProcessInfoBuffer(processInfoBuffer);
     return STATUS_UNSUCCESSFUL;
   }
   unsigned threadIdBufferIndex = 0;
@@ -142,7 +154,8 @@ NTSTATUS EnumerateThreads(PVOID heap, PFROZEN_THREADS threads) {
   threads->pItems = threadIdBuffer;
   threads->capacity = currentProcessInfo->NumberOfThreads;
   threads->size = threadIdBufferIndex;
-  return NtFreeVirtualMemory(NtCurrentProcess(), processInfoBuffer, &bufferSize, MEM_RELEASE);
+  FreeProcessInfoBuffer(processInfoBuffer);
+  return STATUS_SUCCESS;
 }
 
 NTSYSCALLAPI

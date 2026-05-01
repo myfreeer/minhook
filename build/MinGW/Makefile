@@ -8,7 +8,7 @@ OBJS:=$(SRCS:%.c=%.o)
 DEPS:=$(SRCS:%.c=%.d)
 INCS:=-Isrc -Iinclude
 CFLAGS:=-masm=intel -Wall -Werror -std=c11
-LDFLAGS:=-Wl,-enable-stdcall-fixup -s -static-libgcc
+LDFLAGS:=-Wl,-enable-stdcall-fixup -s -static-libgcc -nostdlib -Wl,-e,0
 LDLIBS:=-lntdll -lntdllcrt
 
 all: MinHook.dll libMinHook.dll.a libMinHook.a

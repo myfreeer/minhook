@@ -64,7 +64,13 @@ if(BUILD_SHARED_LIBS)
 endif()
 
 add_library(minhook ${SOURCES_MINHOOK} ${SOURCES_HDE} ${RESOURCES})
-target_link_libraries(minhook ntdll ntdllcrt)
+target_link_libraries(minhook ntdll)
+if(MINGW)
+  target_link_libraries(minhook ntdllcrt)
+  if(BUILD_SHARED_LIBS)
+    set_property(TARGET minhook APPEND_STRING PROPERTY LINK_FLAGS " -nostdlib -Wl,-e,0")
+  endif()
+endif()
 
 target_include_directories(minhook PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include/>

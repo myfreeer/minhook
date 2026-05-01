@@ -159,7 +159,9 @@ static PMEMORY_BLOCK GetMemoryBlock(LPVOID pOrigin)
 #else
     SYSTEM_INFO si;
 #endif
-    MinGetSystemInfo(&si);
+    if (!MinGetSystemInfo(&si))
+        return NULL;
+
     minAddr = (ULONG_PTR)si.lpMinimumApplicationAddress;
     maxAddr = (ULONG_PTR)si.lpMaximumApplicationAddress;
 
@@ -309,7 +311,8 @@ VOID FreeBuffer(LPVOID pBuffer)
 BOOL IsExecutableAddress(LPVOID pAddress)
 {
     MEMORY_BASIC_INFORMATION mi;
-    NtVirtualQuery(pAddress, &mi, sizeof(mi));
+    if (NtVirtualQuery(pAddress, &mi, sizeof(mi)) == 0)
+        return FALSE;
 
     return (mi.State == MEM_COMMIT && (mi.Protect & PAGE_EXECUTE_FLAGS));
 }
