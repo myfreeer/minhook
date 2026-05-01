@@ -411,8 +411,6 @@ static MH_STATUS EnableAllHooksLL(BOOL enable)
 //-------------------------------------------------------------------------
 static VOID EnterSpinLock(VOID)
 {
-    SIZE_T spinCount = 0;
-
     // Wait until the flag is FALSE.
     while (InterlockedCompareExchange(&g_isLocked, TRUE, FALSE) != FALSE)
     {
@@ -421,8 +419,6 @@ static VOID EnterSpinLock(VOID)
 
         // Prevent the loop from being too busy.
         YieldProcessor();
-
-        spinCount++;
     }
 }
 
