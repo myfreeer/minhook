@@ -40,6 +40,7 @@ set(MINHOOK_VERSION ${MINHOOK_MAJOR_VERSION}.${MINHOOK_MINOR_VERSION}.${MINHOOK_
 ################
 
 option(BUILD_SHARED_LIBS "build shared version" OFF)
+option(MINHOOK_BUILD_TESTS "build MinHook smoke tests" OFF)
 
 set(SOURCES_MINHOOK 
   "src/buffer.c"
@@ -149,3 +150,14 @@ install(
 install(
   DIRECTORY include DESTINATION .
 )
+
+if(MINHOOK_BUILD_TESTS)
+  enable_testing()
+
+  add_executable(minhook_smoke_tests
+    "tests/minhook_smoke.c"
+  )
+  target_link_libraries(minhook_smoke_tests PRIVATE minhook user32)
+
+  add_test(NAME minhook_smoke_tests COMMAND minhook_smoke_tests)
+endif()
