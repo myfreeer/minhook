@@ -5,6 +5,7 @@
 #define WIN32_NO_STATUS
 #endif
 
+#include <windows.h>
 #include <winternl.h>
 
 NTSYSAPI

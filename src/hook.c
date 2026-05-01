@@ -34,8 +34,8 @@
 #include "trampoline.h"
 #include "ldr_native.h"
 
-#ifndef ARRAYSIZE
-    #define ARRAYSIZE(A) (sizeof(A)/sizeof((A)[0]))
+#ifndef MINHOOK_ARRAYSIZE
+    #define MINHOOK_ARRAYSIZE(A) (sizeof(A)/sizeof((A)[0]))
 #endif
 
 // Initial capacity of the HOOK_ENTRY buffer.
@@ -542,8 +542,8 @@ MH_STATUS WINAPI MH_CreateHook(LPVOID pTarget, LPVOID pDetour, LPVOID *ppOrigina
                             pHook->isEnabled   = FALSE;
                             pHook->queueEnable = FALSE;
                             pHook->nIP         = ct.nIP;
-                            memcpy(pHook->oldIPs, ct.oldIPs, ARRAYSIZE(ct.oldIPs));
-                            memcpy(pHook->newIPs, ct.newIPs, ARRAYSIZE(ct.newIPs));
+                            memcpy(pHook->oldIPs, ct.oldIPs, MINHOOK_ARRAYSIZE(ct.oldIPs));
+                            memcpy(pHook->newIPs, ct.newIPs, MINHOOK_ARRAYSIZE(ct.newIPs));
 
                             // Back up the target function.
 

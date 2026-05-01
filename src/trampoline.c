@@ -33,8 +33,8 @@
     #include <intrin.h>
 #endif
 
-#ifndef ARRAYSIZE
-    #define ARRAYSIZE(A) (sizeof(A)/sizeof((A)[0]))
+#ifndef MINHOOK_ARRAYSIZE
+    #define MINHOOK_ARRAYSIZE(A) (sizeof(A)/sizeof((A)[0]))
 #endif
 
 #if defined(_M_X64) || defined(__x86_64__)
@@ -270,7 +270,7 @@ BOOL CreateTrampolineFunction(PTRAMPOLINE ct)
             return FALSE;
 
         // Trampoline function has too many instructions.
-        if (ct->nIP >= ARRAYSIZE(ct->oldIPs))
+        if (ct->nIP >= MINHOOK_ARRAYSIZE(ct->oldIPs))
             return FALSE;
 
         ct->oldIPs[ct->nIP] = oldPos;
