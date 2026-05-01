@@ -3,7 +3,8 @@ name: Build
 on:
   workflow_dispatch:
   push:
-    branches: [ "master" ]
+    branches: [ "master", "fork" ]
+  pull_request:
 
 env:
   # Path to the solution file relative to the root of the project.
@@ -57,3 +58,51 @@ jobs:
           path: |
             ${{ runner.temp }}/artifacts/lib/
             ${{ runner.temp }}/artifacts/include/
+
+  mingw:
+    runs-on: windows-latest
+
+    defaults:
+      run:
+        shell: msys2 {0}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up MSYS2 MinGW64
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          install: >-
+            base-devel
+            mingw-w64-x86_64-binutils
+            mingw-w64-x86_64-cmake
+            mingw-w64-x86_64-gcc
+            mingw-w64-x86_64-ninja
+
+      - name: Build and test CMake static
+        run: |
+          cmake -S . -B build-mingw-static -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DMINHOOK_BUILD_TESTS=ON
+          cmake --build build-mingw-static --verbose
+          ctest --test-dir build-mingw-static --output-on-failure
+
+      - name: Build CMake shared and verify imports
+        run: |
+          cmake -S . -B build-mingw-shared -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_SHARED_LIBS=ON
+          cmake --build build-mingw-shared --verbose
+          dll="$(find build-mingw-shared -maxdepth 1 -type f -iname 'minhook*.dll' -print -quit)"
+          test -n "$dll"
+          imports="$(objdump -p "$dll" | sed -n 's/^[[:space:]]*DLL Name: //p' | tr -d '\r' | tr '[:upper:]' '[:lower:]' | sort -u)"
+          test "$imports" = "ntdll.dll"
+
+      - name: Build legacy MinGW makefile and verify imports
+        run: |
+          make -f build/MinGW/Makefile clean
+          make -f build/MinGW/Makefile
+          imports="$(objdump -p MinHook.dll | sed -n 's/^[[:space:]]*DLL Name: //p' | tr -d '\r' | tr '[:upper:]' '[:lower:]' | sort -u)"
+          test "$imports" = "ntdll.dll"
