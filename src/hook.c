@@ -77,13 +77,13 @@ typedef struct _HOOK_ENTRY
 //-------------------------------------------------------------------------
 
 // Spin lock flag for EnterSpinLock()/LeaveSpinLock().
-volatile LONG g_isLocked = FALSE;
+static volatile LONG g_isLocked = FALSE;
 
 // Private heap handle. If not NULL, this library is initialized.
 static HANDLE g_hHeap = NULL;
 
 // Hook entries.
-struct
+static struct
 {
     PHOOK_ENTRY pItems;     // Data heap
     UINT        capacity;   // Size of allocated data heap, items
@@ -130,7 +130,7 @@ static PHOOK_ENTRY AddHookEntry()
 }
 
 //-------------------------------------------------------------------------
-static void DeleteHookEntry(UINT pos)
+static VOID DeleteHookEntry(UINT pos)
 {
     if (pos < g_hooks.size - 1)
         g_hooks.pItems[pos] = g_hooks.pItems[g_hooks.size - 1];
@@ -186,7 +186,7 @@ static DWORD_PTR FindNewIP(PHOOK_ENTRY pHook, DWORD_PTR ip)
 }
 
 //-------------------------------------------------------------------------
-static void ProcessThreadIPs(HANDLE hThread, UINT pos, UINT action)
+static VOID ProcessThreadIPs(HANDLE hThread, UINT pos, UINT action)
 {
     // If the thread suspended in the overwritten area,
     // move IP to the proper address.
@@ -250,30 +250,44 @@ static void ProcessThreadIPs(HANDLE hThread, UINT pos, UINT action)
 }
 
 //-------------------------------------------------------------------------
-static VOID Freeze(PFROZEN_THREADS pThreads, UINT pos, UINT action)
+static MH_STATUS Freeze(PFROZEN_THREADS pThreads, UINT pos, UINT action)
 {
+    MH_STATUS status = MH_OK;
+
     pThreads->pItems   = NULL;
     pThreads->capacity = 0;
     pThreads->size     = 0;
-    if (!NT_SUCCESS(EnumerateThreads(g_hHeap, pThreads))) {
-      return;
+    if (!NT_SUCCESS(EnumerateThreads(g_hHeap, pThreads)))
+    {
+        status = MH_ERROR_MEMORY_ALLOC;
     }
-
-    if (pThreads->pItems != NULL)
+    else if (pThreads->pItems != NULL)
     {
         UINT i;
         for (i = 0; i < pThreads->size; ++i)
         {
             HANDLE hThread = NativeOpenThread(THREAD_ACCESS, FALSE, pThreads->pItems[i]);
+            BOOL suspended = FALSE;
             if (hThread != NULL)
             {
                 ULONG PreviousSuspendCount;
-                NtSuspendThread(hThread, &PreviousSuspendCount);
-                ProcessThreadIPs(hThread, pos, action);
+                if (NT_SUCCESS(NtSuspendThread(hThread, &PreviousSuspendCount)))
+                {
+                    suspended = TRUE;
+                    ProcessThreadIPs(hThread, pos, action);
+                }
                 NtClose(hThread);
+            }
+
+            if (!suspended)
+            {
+                // Mark thread as not suspended, so it's not resumed later on.
+                pThreads->pItems[i] = 0;
             }
         }
     }
+
+    return status;
 }
 
 //-------------------------------------------------------------------------
@@ -284,12 +298,16 @@ static VOID Unfreeze(PFROZEN_THREADS pThreads)
         UINT i;
         for (i = 0; i < pThreads->size; ++i)
         {
-            HANDLE hThread = NativeOpenThread(THREAD_ACCESS, FALSE, pThreads->pItems[i]);
-            if (hThread != NULL)
+            DWORD threadId = pThreads->pItems[i];
+            if (threadId != 0)
             {
-                ULONG PreviousSuspendCount;
-                NtResumeThread(hThread, &PreviousSuspendCount);
-                NtClose(hThread);
+                HANDLE hThread = NativeOpenThread(THREAD_ACCESS, FALSE, threadId);
+                if (hThread != NULL)
+                {
+                    ULONG PreviousSuspendCount;
+                    NtResumeThread(hThread, &PreviousSuspendCount);
+                    NtClose(hThread);
+                }
             }
         }
 
@@ -323,13 +341,13 @@ static MH_STATUS EnableHookLL(UINT pos, BOOL enable)
     {
         PJMP_REL pJmp = (PJMP_REL)pPatchTarget;
         pJmp->opcode = 0xE9;
-        pJmp->operand = (UINT32)((LPBYTE)pHook->pDetour - (pPatchTarget + sizeof(JMP_REL)));
+        pJmp->operand = (INT32)((LPBYTE)pHook->pDetour - (pPatchTarget + sizeof(JMP_REL)));
 
         if (pHook->patchAbove)
         {
             PJMP_REL_SHORT pShortJmp = (PJMP_REL_SHORT)pHook->pTarget;
             pShortJmp->opcode = 0xEB;
-            pShortJmp->operand = (UINT8)(0 - (sizeof(JMP_REL_SHORT) + sizeof(JMP_REL)));
+            pShortJmp->operand = (INT8)(0 - (sizeof(JMP_REL_SHORT) + sizeof(JMP_REL)));
         }
     }
     else
@@ -370,19 +388,21 @@ static MH_STATUS EnableAllHooksLL(BOOL enable)
     if (first != INVALID_HOOK_POS)
     {
         FROZEN_THREADS threads;
-        Freeze(&threads, ALL_HOOKS_POS, enable ? ACTION_ENABLE : ACTION_DISABLE);
-
-        for (i = first; i < g_hooks.size; ++i)
+        status = Freeze(&threads, ALL_HOOKS_POS, enable ? ACTION_ENABLE : ACTION_DISABLE);
+        if (status == MH_OK)
         {
-            if (g_hooks.pItems[i].isEnabled != enable)
+            for (i = first; i < g_hooks.size; ++i)
             {
-                status = EnableHookLL(i, enable);
-                if (status != MH_OK)
-                    break;
+                if (g_hooks.pItems[i].isEnabled != enable)
+                {
+                    status = EnableHookLL(i, enable);
+                    if (status != MH_OK)
+                        break;
+                }
             }
-        }
 
-        Unfreeze(&threads);
+            Unfreeze(&threads);
+        }
     }
 
     return status;
@@ -597,11 +617,13 @@ MH_STATUS WINAPI MH_RemoveHook(LPVOID pTarget)
             if (g_hooks.pItems[pos].isEnabled)
             {
                 FROZEN_THREADS threads;
-                Freeze(&threads, pos, ACTION_DISABLE);
+                status = Freeze(&threads, pos, ACTION_DISABLE);
+                if (status == MH_OK)
+                {
+                    status = EnableHookLL(pos, FALSE);
 
-                status = EnableHookLL(pos, FALSE);
-
-                Unfreeze(&threads);
+                    Unfreeze(&threads);
+                }
             }
 
             if (status == MH_OK)
@@ -640,17 +662,19 @@ static MH_STATUS EnableHook(LPVOID pTarget, BOOL enable)
         }
         else
         {
-            FROZEN_THREADS threads;
             UINT pos = FindHookEntry(pTarget);
             if (pos != INVALID_HOOK_POS)
             {
                 if (g_hooks.pItems[pos].isEnabled != enable)
                 {
-                    Freeze(&threads, pos, ACTION_ENABLE);
+                    FROZEN_THREADS threads;
+                    status = Freeze(&threads, pos, ACTION_ENABLE);
+                    if (status == MH_OK)
+                    {
+                        status = EnableHookLL(pos, enable);
 
-                    status = EnableHookLL(pos, enable);
-
-                    Unfreeze(&threads);
+                        Unfreeze(&threads);
+                    }
                 }
                 else
                 {
@@ -757,20 +781,22 @@ MH_STATUS WINAPI MH_ApplyQueued(VOID)
         if (first != INVALID_HOOK_POS)
         {
             FROZEN_THREADS threads;
-            Freeze(&threads, ALL_HOOKS_POS, ACTION_APPLY_QUEUED);
-
-            for (i = first; i < g_hooks.size; ++i)
+            status = Freeze(&threads, ALL_HOOKS_POS, ACTION_APPLY_QUEUED);
+            if (status == MH_OK)
             {
-                PHOOK_ENTRY pHook = &g_hooks.pItems[i];
-                if (pHook->isEnabled != pHook->queueEnable)
+                for (i = first; i < g_hooks.size; ++i)
                 {
-                    status = EnableHookLL(i, pHook->queueEnable);
-                    if (status != MH_OK)
-                        break;
+                    PHOOK_ENTRY pHook = &g_hooks.pItems[i];
+                    if (pHook->isEnabled != pHook->queueEnable)
+                    {
+                        status = EnableHookLL(i, pHook->queueEnable);
+                        if (status != MH_OK)
+                            break;
+                    }
                 }
-            }
 
-            Unfreeze(&threads);
+                Unfreeze(&threads);
+            }
         }
     }
     else
@@ -799,7 +825,7 @@ MH_STATUS WINAPI MH_CreateHookApiEx(
     if (pTarget == NULL)
         return MH_ERROR_FUNCTION_NOT_FOUND;
 
-    if(ppTarget != NULL)
+    if (ppTarget != NULL)
         *ppTarget = pTarget;
 
     return MH_CreateHook(pTarget, pDetour, ppOriginal);
@@ -809,7 +835,7 @@ MH_STATUS WINAPI MH_CreateHookApiEx(
 MH_STATUS WINAPI MH_CreateHookApi(
     LPCWSTR pszModule, LPCSTR pszProcName, LPVOID pDetour, LPVOID *ppOriginal)
 {
-   return MH_CreateHookApiEx(pszModule, pszProcName, pDetour, ppOriginal, NULL);
+    return MH_CreateHookApiEx(pszModule, pszProcName, pDetour, ppOriginal, NULL);
 }
 
 //-------------------------------------------------------------------------
@@ -833,7 +859,7 @@ MH_STATUS WINAPI MH_CreateHookVirtual(
 }
 
 //-------------------------------------------------------------------------
-const char * WINAPI MH_StatusToString(MH_STATUS status)
+const char *WINAPI MH_StatusToString(MH_STATUS status)
 {
 #define MH_ST2STR(x)    \
     case x:             \

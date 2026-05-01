@@ -11,20 +11,6 @@
 #define STATUS_UNSUCCESSFUL ((NTSTATUS)0xC0000001)
 #endif
 
-typedef struct _SYSTEM_THREAD_INFORMATION {
-  LARGE_INTEGER KernelTime;
-  LARGE_INTEGER UserTime;
-  LARGE_INTEGER CreateTime;
-  ULONG WaitTime;
-  PVOID StartAddress;
-  CLIENT_ID ClientId;
-  KPRIORITY Priority;
-  LONG BasePriority;
-  ULONG ContextSwitches;
-  ULONG ThreadState;
-  KWAIT_REASON WaitReason;
-} SYSTEM_THREAD_INFORMATION, *PSYSTEM_THREAD_INFORMATION;
-
 typedef struct _SYSTEM_PROCESS_INFORMATION_EX {
   ULONG NextEntryOffset;
   ULONG NumberOfThreads;

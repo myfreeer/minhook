@@ -24,7 +24,7 @@
 #  NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 #  SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-cmake_minimum_required(VERSION 3.0)
+cmake_minimum_required(VERSION 3.0...3.5)
 
 project(minhook LANGUAGES C)
 
@@ -58,8 +58,8 @@ endif()
 
 if(BUILD_SHARED_LIBS)
   set(RESOURCES 
-    "dll_resources/minhook.rc"
-    "dll_resources/minhook.def"
+    "dll_resources/MinHook.rc"
+    "dll_resources/MinHook.def"
   )
 endif()
 
@@ -85,7 +85,7 @@ if(WIN32)
     set_target_properties(minhook PROPERTIES DEBUG_POSTFIX ".x32d")
     set_target_properties(minhook PROPERTIES RELEASE_POSTFIX ".x32")
     set_target_properties(minhook PROPERTIES RELWITHDEBINFO_POSTFIX ".x32")
-    set_target_properties(minhook PROPERTIES MINSIZEREL_POSTFIX ".x64")
+    set_target_properties(minhook PROPERTIES MINSIZEREL_POSTFIX ".x32")
   endif()
 else()
   set_target_properties(minhook PROPERTIES PREFIX "lib")
@@ -101,7 +101,7 @@ configure_package_config_file(
     "cmake/minhook-config.cmake.in"
     "minhook-config.cmake"
   INSTALL_DESTINATION 
-    "lib/minhook"
+    "share/minhook"
 )
 
 write_basic_package_version_file(
@@ -117,7 +117,7 @@ install(
     "${CMAKE_CURRENT_BINARY_DIR}/minhook-config.cmake"
     "${CMAKE_CURRENT_BINARY_DIR}/minhook-config-version.cmake"
   DESTINATION 
-    "lib/minhook"
+    "share/minhook"
 )
 
 ###################
@@ -137,7 +137,7 @@ install(
   NAMESPACE 
     minhook::
   DESTINATION 
-    "lib/minhook"
+    "share/minhook"
 )
 
 install(
