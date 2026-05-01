@@ -15,6 +15,8 @@
 #define STATUS_UNSUCCESSFUL ((NTSTATUS)0xC0000001)
 #endif
 
+typedef CLIENT_ID *PMINHOOK_CLIENT_ID;
+
 typedef struct _SYSTEM_PROCESS_INFORMATION_EX {
   ULONG NextEntryOffset;
   ULONG NumberOfThreads;
@@ -181,7 +183,7 @@ NtOpenThread(
     _Out_ PHANDLE ThreadHandle,
     _In_ ACCESS_MASK DesiredAccess,
     _In_ POBJECT_ATTRIBUTES ObjectAttributes,
-    _In_opt_ PCLIENT_ID ClientId
+    _In_opt_ PMINHOOK_CLIENT_ID ClientId
 );
 
 NTSYSCALLAPI

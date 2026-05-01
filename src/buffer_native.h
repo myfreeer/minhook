@@ -21,6 +21,20 @@ extern "C" {
 #define NtCurrentProcess() ((HANDLE)((LONG64)(-1)))
 #endif
 
+typedef struct _MINHOOK_SYSTEM_BASIC_INFORMATION {
+  BYTE Reserved1[4];
+  ULONG MaximumIncrement;
+  ULONG PhysicalPageSize;
+  ULONG NumberOfPhysicalPages;
+  ULONG LowestPhysicalPage;
+  ULONG HighestPhysicalPage;
+  ULONG AllocationGranularity;
+  ULONG_PTR LowestUserAddress;
+  ULONG_PTR HighestUserAddress;
+  ULONG_PTR ActiveProcessors;
+  CCHAR NumberOfProcessors;
+} MINHOOK_SYSTEM_BASIC_INFORMATION, *PMINHOOK_SYSTEM_BASIC_INFORMATION;
+
 NTSYSCALLAPI
 NTSTATUS
 NTAPI
@@ -105,7 +119,7 @@ NtFlushInstructionCache(
 );
 
 static inline BOOL WINAPI MinGetSystemInfo(LPSYSTEM_INFO si) {
-  SYSTEM_BASIC_INFORMATION info;
+  MINHOOK_SYSTEM_BASIC_INFORMATION info;
   if (!NT_SUCCESS(NtQuerySystemInformation(SystemBasicInformation, &info, sizeof(info), NULL))) {
     return FALSE;
   }
@@ -117,6 +131,45 @@ static inline BOOL WINAPI MinGetSystemInfo(LPSYSTEM_INFO si) {
 }
 
 #define RtlCreateDefaultHeap() RtlCreateHeap(HEAP_GROWABLE, NULL, 0, 0, NULL, NULL)
+
+#ifdef _MSC_VER
+NTSYSAPI
+PVOID
+NTAPI
+RtlAllocateHeap(
+    _In_ PVOID HeapHandle,
+    _In_opt_ ULONG Flags,
+    _In_ SIZE_T Size
+);
+
+NTSYSAPI
+BOOLEAN
+NTAPI
+RtlFreeHeap(
+    _In_ PVOID HeapHandle,
+    _In_opt_ ULONG Flags,
+    _In_ PVOID BaseAddress
+);
+
+NTSYSAPI
+PVOID
+NTAPI
+RtlCreateHeap(
+    _In_ ULONG Flags,
+    _In_opt_ PVOID HeapBase,
+    _In_opt_ SIZE_T ReserveSize,
+    _In_opt_ SIZE_T CommitSize,
+    _In_opt_ PVOID Lock,
+    _In_opt_ struct _RTL_HEAP_PARAMETERS *Parameters
+);
+
+NTSYSAPI
+PVOID
+NTAPI
+RtlDestroyHeap(
+    _In_ PVOID HeapHandle
+);
+#endif
 
 NTSYSAPI
 PVOID
