@@ -842,8 +842,17 @@ MH_STATUS WINAPI MH_CreateHookApi(
 MH_STATUS WINAPI MH_CreateHookVirtualEx(
     LPVOID pInstance, UINT methodPos, LPVOID pDetour, LPVOID *ppOriginal, LPVOID *ppTarget)
 {
-    LPVOID* pVMT = *((LPVOID**)pInstance);
-    LPVOID  pTarget = pVMT[methodPos];
+    LPVOID* pVMT;
+    LPVOID  pTarget;
+
+    if (pInstance == NULL)
+        return MH_ERROR_NOT_EXECUTABLE;
+
+    pVMT = *((LPVOID**)pInstance);
+    if (pVMT == NULL)
+        return MH_ERROR_NOT_EXECUTABLE;
+
+    pTarget = pVMT[methodPos];
 
     if (ppTarget != NULL)
         *ppTarget = pTarget;
